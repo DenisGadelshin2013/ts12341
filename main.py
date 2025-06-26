@@ -1,4 +1,3 @@
-
 from flask import Flask, request
 from bot import handle_update
 
@@ -12,3 +11,8 @@ def home():
 def webhook():
     update = request.get_json(force=True)
     return handle_update(update)
+
+if __name__ == "__main__":
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
