@@ -1,76 +1,66 @@
-
 import os
-import json
 import random
-from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+import asyncio
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-DB_FILE = "database.json"
+from telegram import (
+    Bot,
+    Update,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+)
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    ContextTypes,
+)
 
-def load_db():
-    if not os.path.exists(DB_FILE):
-        return {}
-    with open(DB_FILE, "r") as f:
-        return json.load(f)
+BOT_TOKEN = os.environ.get("BOT_TOKEN")  # Не забудь задать переменную окружения
 
-def save_db(data):
-    with open(DB_FILE, "w") as f:
-        json.dump(data, f, indent=2)
 
+# /start — приветствие и кнопка отправки номера
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    kb = [[KeyboardButton("📞 Отправить номер", request_contact=True)]]
-    reply_markup = ReplyKeyboardMarkup(kb, one_time_keyboard=True)
+    keyboard = [
+        [KeyboardButton("📞 Отправить номер", request_contact=True)]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     await update.message.reply_text("Привет! Отправь свой номер телефона:", reply_markup=reply_markup)
 
+
+# обработка контакта (кнопка)
 async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
     contact = update.message.contact
-    user_id = str(update.message.from_user.id)
-    db = load_db()
-    db[user_id] = {
-        "phone_number": contact.phone_number,
-        "chat_id": user_id
-    }
-    save_db(db)
-    await update.message.reply_text("Спасибо! Номер сохранён.")
+    if contact:
+        await update.message.reply_text(f"Спасибо! Мы сохранили твой номер: {contact.phone_number}")
+        # Здесь можно связать Telegram user ID с номером в БД
 
+
+# отправка кода подтверждения
 async def send_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.message.from_user.id)
-    db = load_db()
-    if user_id in db:
-        code = str(random.randint(1000, 9999))
-        db[user_id]["code"] = code
-        save_db(db)
-        await update.message.reply_text(f"Ваш код подтверждения: {code}")
-    else:
-        await update.message.reply_text("Сначала отправьте свой номер.")
+    code = random.randint(1000, 9999)
+    await update.message.reply_text(f"Код подтверждения: {code}")
+    # Можно сохранить этот код в БД или временное хранилище
 
+
+# уведомление пользователю (например, при просрочке возврата)
 async def notify(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    args = context.args
-    if len(args) < 2:
-        await update.message.reply_text("Использование: /notify chat_id сообщение")
-        return
-    chat_id = args[0]
-    text = " ".join(args[1:])
-    await context.bot.send_message(chat_id=chat_id, text=text)
-    await update.message.reply_text("Уведомление отправлено.")
+    await update.message.reply_text("🔔 Напоминание: вы не вернули повербанк вовремя.")
 
+
+# функция, вызываемая Flask при приходе нового update
 def handle_update(update_json):
-    from telegram import Update
-    from telegram.ext import Application
-
     async def process():
-application = Application.builder().token(BOT_TOKEN).build()
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("sendcode", send_code))
-application.add_handler(CommandHandler("notify", notify))
-application.add_handler(MessageHandler(filters.CONTACT, handle_contact))
+        application = Application.builder().token(BOT_TOKEN).build()
 
-await application.initialize()  # <-- ОБЯЗАТЕЛЬНО
-update_obj = Update.de_json(update_json, application.bot)
-await application.process_update(update_obj)
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("sendcode", send_code))
+        application.add_handler(CommandHandler("notify", notify))
+        application.add_handler(MessageHandler(filters.CONTACT, handle_contact))
 
+        await application.initialize()  # обязательно!
+        update_obj = Update.de_json(update_json, application.bot)
+        await application.process_update(update_obj)
 
-    import asyncio
     asyncio.run(process())
-    return "OK"
+    return "ok"
